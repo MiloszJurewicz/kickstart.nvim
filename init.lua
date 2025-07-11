@@ -119,20 +119,20 @@ end)
 
 local function paste()
   return {
-    vim.fn.split(vim.fn.getreg(""), "\n"),
-    vim.fn.getregtype(""),
+    vim.fn.split(vim.fn.getreg '', '\n'),
+    vim.fn.getregtype '',
   }
 end
 
 vim.g.clipboard = {
-  name = "OSC 52",
+  name = 'OSC 52',
   copy = {
-    ["+"] = require("vim.ui.clipboard.osc52").copy("+"),
-    ["*"] = require("vim.ui.clipboard.osc52").copy("*"),
+    ['+'] = require('vim.ui.clipboard.osc52').copy '+',
+    ['*'] = require('vim.ui.clipboard.osc52').copy '*',
   },
   paste = {
-    ["+"] = paste,
-    ["*"] = paste,
+    ['+'] = paste,
+    ['*'] = paste,
   },
 }
 
@@ -203,10 +203,10 @@ vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagn
 vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
 
 -- TIP: Disable arrow keys in normal mode
--- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
--- vim.keymap.set('n', '<right>', '<cmd>echo "Use l to move!!"<CR>')
--- vim.keymap.set('n', '<up>', '<cmd>echo "Use k to move!!"<CR>')
--- vim.keymap.set('n', '<down>', '<cmd>echo "Use j to move!!"<CR>')
+vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
+vim.keymap.set('n', '<right>', '<cmd>echo "Use l to move!!"<CR>')
+vim.keymap.set('n', '<up>', '<cmd>echo "Use k to move!!"<CR>')
+vim.keymap.set('n', '<down>', '<cmd>echo "Use j to move!!"<CR>')
 
 -- Keybinds to make split navigation easier.
 --  Use CTRL+<hjkl> to switch between windows
@@ -687,8 +687,70 @@ require('lazy').setup({
       --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
+      ---@class LspServersConfig
+      ---@field mason table<string, vim.lsp.Config>
+      ---@field others table<string, vim.lsp.Config>
       local servers = {
-        terraformls = {},
+        mason = {
+          terraformls = {},
+          basedpyright = {
+            settings = {
+
+              basedpyright = {
+                analysis = {
+                  autoSearchPaths = false,
+                  diagnosticMode = 'openFilesOnly',
+                  typeCheckingMode = 'basic',
+                  useLibraryCodeForTypes = true,
+                },
+              },
+            },
+          },
+          pylsp = {
+            settings = {
+              pylsp = {
+                -- Turn off all plugins related to diagnostics
+                plugins = {
+                  -- Disable all linting plugins
+                  pyflakes = { enabled = false },
+                  pycodestyle = { enabled = false },
+                  autopep8 = { enabled = false },
+                  yapf = { enabled = false },
+                  mccabe = { enabled = false },
+                  pylsp_mypy = { enabled = false },
+                  pylsp_black = { enabled = false },
+                  pylsp_isort = { enabled = false },
+                  pylint = { enabled = false },
+                  flake8 = { enabled = false },
+                  pydocstyle = { enabled = false },
+                  -- Keep navigation-related plugins enabled
+                  rope_completion = { enabled = true },
+                  jedi_completion = { enabled = true },
+                  jedi_definition = { enabled = true },
+                  jedi_hover = { enabled = true },
+                  jedi_references = { enabled = true },
+                  jedi_signature_help = { enabled = true },
+                  jedi_symbols = { enabled = true },
+                },
+              },
+            },
+          },
+          lua_ls = {
+            -- cmd = { ... },
+            -- filetypes = { ... },
+            -- capabilities = {},
+            settings = {
+              Lua = {
+                completion = {
+                  callSnippet = 'Replace',
+                },
+                -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
+                diagnostics = { disable = { 'missing-fields' } },
+              },
+            },
+          },
+        },
+        others = {},
         -- clangd = {},
         -- gopls = {},
         -- pyright = {},
@@ -701,21 +763,6 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
         --
-
-        lua_ls = {
-          -- cmd = { ... },
-          -- filetypes = { ... },
-          -- capabilities = {},
-          settings = {
-            Lua = {
-              completion = {
-                callSnippet = 'Replace',
-              },
-              -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
-              -- diagnostics = { disable = { 'missing-fields' } },
-            },
-          },
-        },
       }
 
       -- Ensure the servers and tools above are installed
@@ -731,26 +778,40 @@ require('lazy').setup({
       --
       -- You can add other tools here that you want Mason to install
       -- for you, so that they are available from within Neovim.
-      local ensure_installed = vim.tbl_keys(servers or {})
+      local ensure_installed = vim.tbl_keys(servers.mason or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
+      -- Either merge all additional server configs from the `servers.mason` and `servers.others` tables
+      -- to the default language server configs as provided by nvim-lspconfig or
+      -- define a custom server config that's unavailable on nvim-lspconfig.
+      for server, config in pairs(vim.tbl_extend('keep', servers.mason, servers.others)) do
+        if not vim.tbl_isempty(config) then
+          vim.lsp.config(server, config)
+        end
+      end
+
       require('mason-lspconfig').setup {
         ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
         automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
+        automatic_enable = true,
+        --        handlers = {
+        --          function(server_name)
+        --            local server = servers[server_name] or {}
+        --            -- This handles overriding only values explicitly passed
+        --            -- by the server configuration above. Useful when disabling
+        --            -- certain features of an LSP (for example, turning off formatting for ts_ls)
+        --            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
+        --            require('lspconfig')[server_name].setup(server)
+        --          end,
+        --        },
       }
+      -- Manually run vim.lsp.enable for all language servers that are *not* installed via Mason
+      if not vim.tbl_isempty(servers.others) then
+        vim.lsp.enable(vim.tbl_keys(servers.others))
+      end
     end,
   },
 
@@ -774,7 +835,7 @@ require('lazy').setup({
         -- Disable "format_on_save lsp_fallback" for languages that don't
         -- have a well standardized coding style. You can add additional
         -- languages here or re-enable it for the disabled ones.
-        local disable_filetypes = { c = true, cpp = true }
+        local disable_filetypes = { c = true, cpp = true, python = true }
         if disable_filetypes[vim.bo[bufnr].filetype] then
           return nil
         else
@@ -998,6 +1059,7 @@ require('lazy').setup({
   require 'kickstart.plugins.neo-tree',
   require 'custom.plugins.vim-expand-region',
   require 'custom.plugins.cattpucin',
+  require 'custom.plugins.copilot',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
